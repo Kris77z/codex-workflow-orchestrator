@@ -1,6 +1,6 @@
 interface:
-  display_name: "Codex Subagents 优化器"
-  short_description: "安装可复用 Codex subagent 默认配置"
-  default_prompt: "使用 $codex-subagents-optimizer 为当前环境配置一套务实的 Codex subagents。"
+  display_name: "Codex Agent 工作流优化器"
+  short_description: "安装 Codex subagents 与工作流规则"
+  default_prompt: "使用 $codex-subagents-optimizer 为当前环境配置小 Feature 对抗闭环和大 Feature squad 工作流。"
 policy:
   allow_implicit_invocation: true
