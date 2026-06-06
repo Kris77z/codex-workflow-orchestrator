@@ -1,12 +1,12 @@
-# Codex Agent 工作流优化器
+# Codex Workflow Orchestrator
 
-一份用于优化 Codex 工作流的本地 Skill。它会安装一套可复用的 Codex Subagents 默认配置，并把复杂开发拆成三种更可控的模式：
+一份用于编排 Codex 工作流的本地 Skill。它会安装一套可复用的 Codex agents，并把复杂开发拆成三种更可控的模式：
 
 - 小 Feature：`feature_coder` ↔ `feature_reviewer` 对抗闭环，最后 human review。
 - 大 Feature：方案确认 → squad 实现 → 验收，人主要介入阶段 1 和阶段 3。
 - 多 Thread / Lane：参考 threads 思路，把多个 issue/PR/review/worktree 拆成独立 lane，再用 review 和 merge gate 收口。
 
-核心目标：让 Codex 不只是“会写代码”，而是按工程流程先查证、再判断、再实现、最后验收；遇到多任务时还能明确文件所有权、并行边界和合并门禁。
+核心目标：让 Codex 不只是“会写代码”，而是能像一个小型工程团队一样先查证、再判断、再实现、最后验收；遇到多任务时还能明确文件所有权、并行边界和合并门禁。
 
 ## 和 threads skill 的关系
 
@@ -18,7 +18,7 @@ Orchestrator Thread（主会话，总控）
       -> code_explorer / feature_coder / feature_reviewer / docs_checker ...
 ```
 
-- `codex-subagents-optimizer`：安装专家角色、项目规则和常用工作流。
+- `codex-workflow-orchestrator`：安装专家角色、项目规则、lane map 和门禁模板。
 - `threads` 思路：规划多个会话 lane、分配 worktree/file ownership、设置 review/merge/cleanup 门禁。
 
 一句话：subagents 是能力包，threads/lane 是组织方式。
@@ -38,7 +38,7 @@ Orchestrator Thread（主会话，总控）
 - 验收阶段只有“代码能跑”，没有逐项证据和 Go/No-Go。
 - 任务结束后没有检查远端 issue/PR/review thread 与本地 stale worktree。
 
-这份 Skill 的目标是把这些高频动作固化成可复用的 agents、lane map 和 handoff prompts。
+这份 Skill 的目标是把这些高频动作固化成可复用的 agents、lane map、handoff prompts 和 merge/closure gate。
 
 ## 默认安装的 Agents
 
@@ -325,14 +325,16 @@ lanes:
 
 ```bash
 mkdir -p ~/.codex/skills
-git clone https://github.com/Kris77z/codex-subagents-optimizer.git ~/.codex/skills/codex-subagents-optimizer
+git clone https://github.com/Kris77z/codex-workflow-orchestrator.git ~/.codex/skills/codex-workflow-orchestrator
 ```
 
 然后运行安装脚本：
 
 ```bash
-python3 ~/.codex/skills/codex-subagents-optimizer/scripts/install_subagents.py
+python3 ~/.codex/skills/codex-workflow-orchestrator/scripts/install_subagents.py
 ```
+
+如果你已经用旧名 `codex-subagents-optimizer` 安装过，GitHub 会保留仓库跳转；建议新安装或迁移时使用新目录名 `codex-workflow-orchestrator`。
 
 安装脚本会：
 
@@ -354,19 +356,19 @@ job_max_runtime_seconds = 1800
 给某个项目补充或升级 Subagents 协作规则：
 
 ```bash
-python3 ~/.codex/skills/codex-subagents-optimizer/scripts/install_subagents.py --project /path/to/repo
+python3 ~/.codex/skills/codex-workflow-orchestrator/scripts/install_subagents.py --project /path/to/repo
 ```
 
 如果项目里已经有重复的 `.codex` 配置，并且确认要清理：
 
 ```bash
-python3 ~/.codex/skills/codex-subagents-optimizer/scripts/install_subagents.py --project /path/to/repo --remove-project-codex
+python3 ~/.codex/skills/codex-workflow-orchestrator/scripts/install_subagents.py --project /path/to/repo --remove-project-codex
 ```
 
 先预览会改什么：
 
 ```bash
-python3 ~/.codex/skills/codex-subagents-optimizer/scripts/install_subagents.py --project /path/to/repo --dry-run
+python3 ~/.codex/skills/codex-workflow-orchestrator/scripts/install_subagents.py --project /path/to/repo --dry-run
 ```
 
 安装脚本会新增或替换项目 `AGENTS.md` 里的 `## Subagents 使用规则`。

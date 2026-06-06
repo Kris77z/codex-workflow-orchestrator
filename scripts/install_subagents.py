@@ -433,7 +433,7 @@ def update_project(project: Path, remove_project_codex: bool, dry_run: bool) -> 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="安装一套务实的 Codex subagents 与 thread/lane 工作流默认配置。")
+    parser = argparse.ArgumentParser(description="安装一套务实的 Codex workflow orchestration默认配置。")
     parser.add_argument("--codex-home", type=Path, default=Path.home() / ".codex")
     parser.add_argument("--project", type=Path)
     parser.add_argument("--remove-project-codex", action="store_true")
