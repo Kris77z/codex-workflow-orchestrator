@@ -1,6 +1,6 @@
 ---
 name: codex-workflow-orchestrator
-description: 用于编排 Codex agent 工作流，安装可复用的自定义 agents、全局 agents 配置和 AGENTS.md 协作规则；适合给自己或他人配置小 Feature 的 coder-reviewer 对抗闭环、大 Feature 的方案确认/squad/验收门控，以及参考 threads 思路做多会话 lane/worktree 编排、独立 review 和 merge gate。
+description: 用于编排 Codex agent 工作流，安装可复用的自定义 agents、全局 agents 配置和 AGENTS.md 协作规则；适合给自己或他人配置小 Feature 的 coder-reviewer 对抗闭环、大 Feature 的方案确认/squad/验收门控，以及多会话 lane/worktree 编排、独立 review 和 merge gate。
 metadata:
   short-description: 配置 Codex workflow 编排规则
 ---

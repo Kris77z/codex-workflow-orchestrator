@@ -4,24 +4,9 @@
 
 - 小 Feature：`feature_coder` ↔ `feature_reviewer` 对抗闭环，最后 human review。
 - 大 Feature：方案确认 → squad 实现 → 验收，人主要介入阶段 1 和阶段 3。
-- 多 Thread / Lane：参考 threads 思路，把多个 issue/PR/review/worktree 拆成独立 lane，再用 review 和 merge gate 收口。
+- 多 Thread / Lane：把多个 issue/PR/review/worktree 拆成独立 lane，再用 review 和 merge gate 收口。
 
 核心目标：让 Codex 不只是“会写代码”，而是能像一个小型工程团队一样先查证、再判断、再实现、最后验收；遇到多任务时还能明确文件所有权、并行边界和合并门禁。
-
-## 和 threads skill 的关系
-
-这个项目保留 subagents 的专家能力层，同时补上 thread/lane 的会话编排层：
-
-```text
-Orchestrator Thread（主会话，总控）
-  -> Worker Thread / Review Thread / Research Thread（任务 lane）
-      -> code_explorer / feature_coder / feature_reviewer / docs_checker ...
-```
-
-- `codex-workflow-orchestrator`：安装专家角色、项目规则、lane map 和门禁模板。
-- `threads` 思路：规划多个会话 lane、分配 worktree/file ownership、设置 review/merge/cleanup 门禁。
-
-一句话：subagents 是能力包，threads/lane 是组织方式。
 
 ## 解决什么问题
 
