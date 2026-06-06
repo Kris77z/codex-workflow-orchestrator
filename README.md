@@ -1,11 +1,27 @@
 # Codex Agent 工作流优化器
 
-一份用于优化 Codex 工作流的本地 Skill。它会安装一套可复用的 Codex Subagents 默认配置，并把复杂开发拆成两种更可控的模式：
+一份用于优化 Codex 工作流的本地 Skill。它会安装一套可复用的 Codex Subagents 默认配置，并把复杂开发拆成三种更可控的模式：
 
 - 小 Feature：`feature_coder` ↔ `feature_reviewer` 对抗闭环，最后 human review。
 - 大 Feature：方案确认 → squad 实现 → 验收，人主要介入阶段 1 和阶段 3。
+- 多 Thread / Lane：参考 threads 思路，把多个 issue/PR/review/worktree 拆成独立 lane，再用 review 和 merge gate 收口。
 
-核心目标：减少上线后问题，让 Codex 不只是“会写代码”，而是按工程流程先查证、再判断、再实现、最后验收。
+核心目标：让 Codex 不只是“会写代码”，而是按工程流程先查证、再判断、再实现、最后验收；遇到多任务时还能明确文件所有权、并行边界和合并门禁。
+
+## 和 threads skill 的关系
+
+这个项目保留 subagents 的专家能力层，同时补上 thread/lane 的会话编排层：
+
+```text
+Orchestrator Thread（主会话，总控）
+  -> Worker Thread / Review Thread / Research Thread（任务 lane）
+      -> code_explorer / feature_coder / feature_reviewer / docs_checker ...
+```
+
+- `codex-subagents-optimizer`：安装专家角色、项目规则和常用工作流。
+- `threads` 思路：规划多个会话 lane、分配 worktree/file ownership、设置 review/merge/cleanup 门禁。
+
+一句话：subagents 是能力包，threads/lane 是组织方式。
 
 ## 解决什么问题
 
@@ -14,15 +30,37 @@
 - 没看清真实代码链路就开始改。
 - 小需求缺少 reviewer 对抗，隐藏 bug 容易进主线。
 - 大需求一开始就写代码，方案、边界、验收标准都没确认。
+- 多个 issue/PR 并行时，文件所有权不清，容易互相覆盖。
+- PR 或上线前缺少独立风险审查和 merge gate。
 - 没看日志、payload、fallback path 就判断根因。
-- PR 或上线前缺少独立风险审查。
 - 第三方 API / SDK 行为靠记忆判断。
 - UI bug 没有复现步骤、console、network、截图证据。
 - 验收阶段只有“代码能跑”，没有逐项证据和 Go/No-Go。
+- 任务结束后没有检查远端 issue/PR/review thread 与本地 stale worktree。
 
-这份 Skill 的目标是把这些高频动作固化成可复用的 agents 和工作流。
+这份 Skill 的目标是把这些高频动作固化成可复用的 agents、lane map 和 handoff prompts。
 
 ## 默认安装的 Agents
+
+### 编排与门控 Agents
+
+#### `thread_planner`
+
+只读 Thread/Lane 规划 Agent。
+
+用于多 issue/PR、并行实现、review 队列、研究拆分前，输出 lane map、worktree 计划、文件所有权、依赖顺序、验证责任人和 stop conditions。
+
+#### `merge_gate_reviewer`
+
+只读合并门禁 Agent。
+
+用于 merge 前独立检查当前 head、CI/checks、diff 范围、review findings、review threads、high-context 文件、测试弱化和剩余风险。它不改代码，不提交，不 merge。
+
+#### `closure_auditor`
+
+只读收尾审计 Agent。
+
+用于合并、关闭 issue/PR 或队列处理结束后，区分远端真实状态、本地 stale state、未解决 review thread、未回复 review feedback、脏 worktree 和待清理分支。
 
 ### 工作流 Agents
 
@@ -208,6 +246,79 @@ Human 最后 review
 进入验收。请用 acceptance_checker 按阶段 1 的验收标准逐项验证，最后给 Go/No-Go。
 ```
 
+## 工作流三：多 Thread / Lane 编排
+
+适合这些场景：
+
+- 多个 issue / PR 队列处理。
+- 能并行实现的多个子任务。
+- 需要独立 worktree 的跨模块改动。
+- review then merge。
+- 多角度研究后再写 spec。
+- 合并后检查 issue/PR/review thread/本地 worktree 是否闭环。
+
+### 决策模式
+
+- `plan_only`：只拆队列、风险、依赖和并行度，不改代码。
+- `execute_direct`：先规划，再执行一个或多个有边界的实现 lane。
+- `review_only`：只读审查 PR、diff 或 worktree。
+- `research_spec`：按研究角度拆只读 thread，最后合成 spec/issue。
+- `clarify_first`：repo、目标、权限或完成标准缺失时先问清楚。
+
+### Lane Map
+
+任何实现前，主 Agent 必须先输出 lane map：
+
+```text
+mode:
+repo:
+base_ref:
+global_constraints:
+verification_owner:
+stop_conditions:
+lanes:
+- id:
+  role: planner | worker | reviewer | merge_reviewer | researcher | closure_auditor
+  target:
+  worktree:
+  writable_files:
+  forbidden_files:
+  expected_output:
+  verification:
+```
+
+硬规则：
+
+- 先查 repo 指令、git 状态、dirty files、open issue/PR、CI 和相关代码。
+- planner、reviewer、merge reviewer、closure auditor 默认只读。
+- worker 必须有互不重叠的 `writable_files`。
+- `AGENTS.md`、`CLAUDE.md`、settings、hooks、setup 脚本默认禁止修改，除非用户明确要求。
+- worker 不 merge；merge 前必须经过独立 review lane 和 `merge_gate_reviewer`。
+- 如果当前环境没有 native thread/subagent 工具，输出 lane map 和 handoff prompts，不假装已经并行执行。
+
+### Merge Gate
+
+不要只凭 worker 输出 merge。合并前必须满足：
+
+- 至少一个独立 review lane 已审查当前 diff/head。
+- blocker 已修复，或用证据明确判定不是问题。
+- 必要 checks 是 fresh 的，且绑定当前 head。
+- GitHub review threads 已检查；不能只看普通 PR comments。
+- 已修复的 review feedback 有回复或 thread 已 resolve，除非用户禁止写 GitHub。
+- 最终答复能说清 PR、commit、变更文件和验证命令。
+
+推荐提示词：
+
+```text
+这是多 issue/PR 队列。请按 thread_lanes 执行：先用 thread_planner 输出 lane map，能并行的分独立 worktree；每个实现 lane 必须有独立 reviewer，merge 前用 merge_gate_reviewer。
+```
+
+```text
+只做 review_only。请开独立 review lane 审查 PR #123，输出 findings first；不要修改、提交或 merge。
+```
+
+更多模板见 [`references/thread-prompt-patterns.md`](references/thread-prompt-patterns.md)。
+
 ## 安装
 
 把这个仓库 clone 到本地 Codex skills 目录：
@@ -227,7 +338,7 @@ python3 ~/.codex/skills/codex-subagents-optimizer/scripts/install_subagents.py
 
 - 备份已有的 `~/.codex/config.toml`
 - 写入或合并全局 `[agents]` 配置
-- 创建 10 个全局 agents 到 `~/.codex/agents/`
+- 创建 13 个全局 agents 到 `~/.codex/agents/`
 
 默认写入的全局配置：
 
@@ -268,16 +379,23 @@ python3 ~/.codex/skills/codex-subagents-optimizer/scripts/install_subagents.py -
 ## Subagents 使用规则
 
 - 默认单 Agent 执行；只有任务可并行、需要独立审查、需要复现取证、或进入明确工作流时才启用 subagents。
+- subagents 是专家能力层；thread/lane 是会话编排层，复杂并行任务先拆 lane，再给每个 lane 配合适 subagents。
 - 小 Feature 使用 `small_feature_duel`：`feature_coder` 和 `feature_reviewer` 最多 3 轮对抗闭环，最后交给 human review。
 - 大 Feature 使用 `large_feature_squad`：先方案确认，再 squad 实现，最后验收；human 主要介入阶段 1 和阶段 3。
+- 多 issue/PR/worktree 使用 `thread_lanes`：先由 `thread_planner` 输出 lane map，明确 mode、repo、base_ref、stop_conditions、writable_files、forbidden_files、expected_output 和 verification。
 - 阶段 1 只确认方案，不写业务代码，必须产出验收标准和测试计划。
 - 阶段 2 每个子任务必须经过 reviewer，不能跳过复审。
 - 阶段 3 必须按验收标准逐项验证；没有证据不允许给 Go。
+- planner、reviewer、merge reviewer、closure auditor 默认只读；worker 的 writable_files 必须互不重叠。
+- `AGENTS.md`、`CLAUDE.md`、settings、hooks、setup 脚本默认禁止修改，除非用户明确要求。
 - 改代码前，复杂任务优先让 `code_explorer` 只读梳理真实链路。
 - 上线、PR、跨模块改动，使用 `risk_reviewer` 做独立审查。
+- review then merge 必须使用独立 review lane；merge 前用 `merge_gate_reviewer` 检查当前 head、checks、review threads 和剩余风险。
+- 合并、关闭 issue/PR 或队列处理结束后，用 `closure_auditor` 区分远端真实状态和本地 stale state。
 - 日志、payload、fallback、代理链问题，使用 `log_investigator`。
 - 涉及第三方 API、SDK、OpenAI、框架版本行为，使用 `docs_checker` 查官方来源。
 - UI 问题先用 `ui_reproducer` 复现并采集证据，再决定是否修改。
+- 如果当前环境没有 native thread/subagent 工具，输出 lane map 和 handoff prompts，不假装已并行执行。
 - Subagent 默认不提交、不推送、不做破坏性操作。
 - 主 Agent 必须汇总证据后再给最终结论。
 ```
@@ -287,9 +405,10 @@ python3 ~/.codex/skills/codex-subagents-optimizer/scripts/install_subagents.py -
 - 主 Agent 负责理解需求、控制范围、最终决策。
 - 小 Feature 通过 coder-reviewer 对抗提高细节质量。
 - 大 Feature 通过阶段门控降低方向和验收风险。
+- 多任务通过 lane map 控制并行、所有权和收口。
 - Subagents 负责独立取证、审查、复现、查文档。
 - 默认只读；只有 coder、UI 复现、验收取证允许 workspace-write。
-- 不提交、不推送、不做破坏性操作。
+- 不提交、不推送、不做破坏性操作，除非用户明确要求。
 - 所有结论必须基于真实文件、日志、请求链或官方来源。
 - 控制并发和递归，避免 token 和时间失控。
 
